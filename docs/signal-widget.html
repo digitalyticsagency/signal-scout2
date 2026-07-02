@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Signal — Speaking Opportunities</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#12203B;
+    --ink-2:#1B2E52;
+    --parchment:#F6F2E9;
+    --card:#FFFFFF;
+    --brass:#B4842B;
+    --brass-light:#D9A94C;
+    --slate:#3A3F4B;
+    --slate-soft:#6B7280;
+    --line:#E4DFD3;
+    --new-green:#3F6B4A;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  #signal-widget{
+    background:var(--parchment);
+    color:var(--slate);
+    font-family:'Inter',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding:28px;
+    border-radius:18px;
+    max-width:820px;
+    margin:0 auto;
+  }
+  #signal-widget .display{font-family:'Fraunces',serif;}
+  #signal-widget .mono{font-family:'JetBrains Mono',monospace;}
+
+  #signal-widget .sw-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    flex-wrap:wrap;
+    gap:12px;
+    margin-bottom:20px;
+  }
+  #signal-widget h2.display{
+    font-size:24px;
+    font-weight:600;
+    color:var(--ink);
+    margin:0 0 4px;
+  }
+  #signal-widget .sw-sub{
+    font-size:13px;
+    color:var(--slate-soft);
+    margin:0;
+  }
+  #signal-widget .sw-updated{
+    font-size:11.5px;
+    font-family:'JetBrains Mono',monospace;
+    color:var(--slate-soft);
+    text-align:right;
+  }
+
+  #signal-widget .filters{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:18px;
+  }
+  #signal-widget .filter-btn{
+    border:1px solid var(--line);
+    background:#FBF9F4;
+    padding:7px 14px;
+    border-radius:99px;
+    font-size:12.5px;
+    font-weight:600;
+    cursor:pointer;
+    color:var(--slate);
+  }
+  #signal-widget .filter-btn.active{
+    background:var(--ink);
+    border-color:var(--ink);
+    color:#fff;
+  }
+  #signal-widget .filter-btn:focus-visible{outline:2px solid var(--brass-light);outline-offset:2px;}
+
+  #signal-widget .cards{display:flex;flex-direction:column;gap:14px;}
+  #signal-widget .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:18px 20px;
+    transition:box-shadow .15s ease, opacity .2s ease;
+  }
+  #signal-widget .card:hover{box-shadow:0 10px 28px -18px rgba(18,32,59,.3);}
+  #signal-widget .card.is-new{border-color:var(--brass-light);box-shadow:0 8px 26px -16px rgba(180,132,43,.5);}
+  #signal-widget .card.dismissed{opacity:.4;}
+  #signal-widget .card.dismissed:hover{opacity:.7;}
+
+  #signal-widget .card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px;}
+  #signal-widget .card-title{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:16px;
+    color:var(--ink);
+    margin:0 0 3px;
+  }
+  #signal-widget .card-org{font-size:12.5px;color:var(--slate-soft);}
+  #signal-widget .badges{display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0;}
+  #signal-widget .badge{
+    font-size:10px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    padding:4px 8px;
+    border-radius:99px;
+    white-space:nowrap;
+  }
+  #signal-widget .badge.new{background:var(--new-green);color:#fff;}
+  #signal-widget .badge.region{background:#EFE7D6;color:var(--brass);border:1px solid #E2D4B0;}
+  #signal-widget .badge.type{background:#EFF1F5;color:var(--ink);}
+
+  #signal-widget .card-meta{
+    display:flex;gap:16px;flex-wrap:wrap;
+    font-size:12px;
+    font-family:'JetBrains Mono',monospace;
+    color:var(--slate-soft);
+    margin:8px 0 10px;
+  }
+  #signal-widget .card-meta b{color:var(--slate);font-weight:600;}
+
+  #signal-widget .card-fit{
+    font-size:13.5px;
+    line-height:1.5;
+    color:var(--slate);
+    margin:0 0 12px;
+  }
+  #signal-widget .card-fit b{color:var(--ink);}
+
+  #signal-widget .card-bottom{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+  #signal-widget .card-bottom a{
+    color:var(--brass);
+    font-size:12.5px;
+    font-weight:600;
+    text-decoration:none;
+    border-bottom:1px solid var(--brass-light);
+  }
+  #signal-widget .icon-btn{
+    border:1px solid var(--line);
+    background:#FBF9F4;
+    padding:5px 11px;
+    border-radius:7px;
+    font-size:11.5px;
+    font-weight:600;
+    cursor:pointer;
+    color:var(--slate);
+  }
+  #signal-widget .icon-btn:hover{border-color:var(--ink);}
+  #signal-widget .icon-btn.saved{background:var(--ink);color:#fff;border-color:var(--ink);}
+
+  #signal-widget .empty-state, #signal-widget .error-state{
+    border:1px dashed var(--line);
+    border-radius:var(--radius);
+    padding:36px 24px;
+    text-align:center;
+    color:var(--slate-soft);
+    font-size:13.5px;
+  }
+  #signal-widget .empty-state .display, #signal-widget .error-state .display{
+    font-size:17px;color:var(--ink);display:block;margin-bottom:6px;
+  }
+
+  #signal-widget .skel-line{
+    border-radius:6px;
+    background:linear-gradient(90deg, #EFEBDF 25%, #F7F4EC 37%, #EFEBDF 63%);
+    background-size:400% 100%;
+    animation:sw-shimmer 1.4s ease infinite;
+  }
+  @keyframes sw-shimmer{0%{background-position:100% 0;}100%{background-position:0 0;}}
+
+  #signal-widget button:focus-visible, #signal-widget a:focus-visible{
+    outline:2px solid var(--brass-light);
+    outline-offset:2px;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    #signal-widget *{animation-duration:0.001ms !important;}
+  }
+  @media (max-width:520px){
+    #signal-widget{padding:18px;}
+    #signal-widget .card{padding:14px;}
+  }
+</style>
+</head>
+<body>
+
+<div id="signal-widget">
+  <div class="sw-head">
+    <div>
+      <h2 class="display">Speaking opportunities</h2>
+      <p class="sw-sub">Scanned weekly &middot; updated automatically</p>
+    </div>
+    <div class="sw-updated" id="sw-updated"></div>
+  </div>
+
+  <div class="filters" id="sw-filters" style="display:none;">
+    <button class="filter-btn active" data-region="all" type="button">All</button>
+    <button class="filter-btn" data-region="Australia" type="button">Australia</button>
+    <button class="filter-btn" data-region="USA" type="button">USA</button>
+  </div>
+
+  <div id="sw-results">
+    <div class="cards">
+      <div class="card" aria-hidden="true">
+        <div class="skel-line" style="width:50%;height:16px;margin-bottom:10px;"></div>
+        <div class="skel-line" style="width:28%;height:11px;margin-bottom:16px;"></div>
+        <div class="skel-line" style="width:75%;height:11px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // Change this to your own GitHub Pages URL once Pages is enabled on the repo.
+  // Format: https://<your-github-username>.github.io/<repo-name>/results.json
+  const DATA_URL = "https://digitalyticsagency.github.io/signal-scout2/results.json";
+
+  const root = document.getElementById('signal-widget');
+  const resultsEl = document.getElementById('sw-results');
+  const updatedEl = document.getElementById('sw-updated');
+  const filtersEl = document.getElementById('sw-filters');
+
+  let allItems = [];
+  let currentFilter = 'all';
+
+  function escapeHtml(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function getLocal(key){
+    try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : []; }catch(e){ return []; }
+  }
+  function setLocal(key, val){
+    try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){}
+  }
+
+  function formatUpdated(iso){
+    try{
+      const d = new Date(iso);
+      return 'Last scanned ' + d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) + ' at ' + d.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+    }catch(e){ return ''; }
+  }
+
+  function render(){
+    const savedIds = getLocal('sw-saved-ids');
+    const dismissedIds = getLocal('sw-dismissed-ids');
+
+    const filtered = allItems.filter(it => currentFilter === 'all' || (it.region || '').toLowerCase() === currentFilter.toLowerCase());
+
+    if(filtered.length === 0){
+      resultsEl.innerHTML = `<div class="empty-state"><span class="display">Nothing here right now</span>Check back after the next weekly scan.</div>`;
+      return;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'cards';
+
+    filtered.forEach(it => {
+      const card = document.createElement('div');
+      const isDismissed = dismissedIds.includes(it.id);
+      const isSaved = savedIds.includes(it.id);
+      card.className = 'card' + (it.isNew ? ' is-new' : '') + (isDismissed ? ' dismissed' : '');
+
+      card.innerHTML = `
+        <div class="card-top">
+          <div>
+            <p class="card-title">${escapeHtml(it.title || 'Untitled opportunity')}</p>
+            <p class="card-org">${escapeHtml(it.organization || 'Organizer unknown')}</p>
+          </div>
+          <div class="badges">
+            ${it.isNew ? '<span class="badge new">New</span>' : ''}
+            <span class="badge region">${escapeHtml(it.region || '')}</span>
+            <span class="badge type">${escapeHtml(it.type || 'Opportunity')}</span>
+          </div>
+        </div>
+        <div class="card-meta">
+          <span><b>Event date:</b> ${escapeHtml(it.date || 'TBD')}</span>
+          <span><b>Apply by:</b> ${escapeHtml(it.deadline || 'Not specified')}</span>
+        </div>
+        <p class="card-fit"><b>Why it fits:</b> ${escapeHtml(it.fit_reason || '')}</p>
+        <div class="card-bottom">
+          ${it.url ? `<a href="${escapeHtml(it.url)}" target="_blank" rel="noopener">View source ↗</a>` : '<span></span>'}
+          <button class="icon-btn ${isSaved ? 'saved' : ''}" data-id="${escapeHtml(it.id)}" data-action="save">${isSaved ? 'Saved' : 'Save'}</button>
+        </div>
+      `;
+
+      card.querySelector('[data-action="save"]').onclick = (e) => {
+        const ids = getLocal('sw-saved-ids');
+        const idx = ids.indexOf(it.id);
+        const nowSaved = idx === -1;
+        if(nowSaved){ ids.push(it.id); } else { ids.splice(idx,1); }
+        setLocal('sw-saved-ids', ids);
+        e.target.classList.toggle('saved', nowSaved);
+        e.target.textContent = nowSaved ? 'Saved' : 'Save';
+      };
+
+      wrap.appendChild(card);
+    });
+
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(wrap);
+  }
+
+  async function load(){
+    try{
+      const res = await fetch(DATA_URL + '?t=' + Date.now(), { cache: 'no-store' });
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      allItems = Array.isArray(data.opportunities) ? data.opportunities : [];
+      updatedEl.textContent = data.generated_at ? formatUpdated(data.generated_at) : '';
+      filtersEl.style.display = allItems.length ? 'flex' : 'none';
+      render();
+    }catch(err){
+      console.error('Signal widget: failed to load results', err);
+      resultsEl.innerHTML = `<div class="error-state"><span class="display">Couldn't load results</span>The data feed may be temporarily unavailable — try refreshing shortly.</div>`;
+    }
+  }
+
+  filtersEl.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.onclick = () => {
+      filtersEl.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentFilter = btn.dataset.region;
+      render();
+    };
+  });
+
+  load();
+})();
+</script>
+
+</body>
+</html>
