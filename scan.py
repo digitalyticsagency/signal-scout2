@@ -24,6 +24,7 @@ import requests
 HERE = Path(__file__).parent
 CONFIG_PATH = HERE / "config.json"
 STATE_PATH = HERE / "seen_ids.json"
+RESULTS_PATH = HERE / "docs" / "results.json"
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL")
@@ -194,6 +195,19 @@ def send_slack(new_items, region):
         print("Slack message sent")
 
 
+def save_results(items, region, topics, new_ids):
+    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "generated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "region": region,
+        "topics": topics,
+        "opportunities": [
+            {**it, "isNew": it["id"] in new_ids} for it in items
+        ],
+    }
+    RESULTS_PATH.write_text(json.dumps(payload, indent=2))
+
+
 def main():
     config = load_config()
     topics = config["topics"]
@@ -206,9 +220,11 @@ def main():
     items = run_search(topics, region)
     print(f"Claude returned {len(items)} item(s)")
 
-    new_items = [it for it in items if it["id"] not in seen_ids]
+    new_item_ids = {it["id"] for it in items if it["id"] not in seen_ids}
+    new_items = [it for it in items if it["id"] in new_item_ids]
     seen_ids.update(it["id"] for it in items)
     save_seen_ids(seen_ids)
+    save_results(items, region, topics, new_item_ids if not is_first_run else set())
 
     if is_first_run:
         print(f"First run — saved {len(items)} as baseline, no notifications sent.")
