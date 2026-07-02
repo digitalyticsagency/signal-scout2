@@ -187,8 +187,12 @@
     #signal-widget *{animation-duration:0.001ms !important;}
   }
   @media (max-width:520px){
-    #signal-widget{padding:18px;}
+    #signal-widget{padding:16px;border-radius:12px;}
     #signal-widget .card{padding:14px;}
+    #signal-widget h2.display{font-size:20px;}
+    #signal-widget .sw-head{flex-direction:column;align-items:flex-start;}
+    #signal-widget .sw-updated{text-align:left;}
+    #signal-widget .card-meta{gap:10px;font-size:11px;}
   }
 </style>
 </head>
@@ -337,6 +341,16 @@
   });
 
   load();
+
+  // Report content height to the parent page so an embedding iframe can
+  // resize itself instead of using a fixed height (which either clips
+  // content or leaves dead space, especially on mobile).
+  function reportHeight(){
+    const height = document.getElementById('signal-widget').offsetHeight;
+    window.parent.postMessage({ type: 'signal-widget-height', height }, '*');
+  }
+  new ResizeObserver(reportHeight).observe(root);
+  window.addEventListener('load', reportHeight);
 })();
 </script>
 
