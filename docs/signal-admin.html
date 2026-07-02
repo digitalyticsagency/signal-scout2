@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Signal — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#12203B; --ink-2:#1B2E52; --parchment:#F6F2E9; --card:#FFFFFF;
+    --brass:#B4842B; --brass-light:#D9A94C; --slate:#3A3F4B; --slate-soft:#6B7280;
+    --line:#E4DFD3; --danger:#A8442E; --ok:#3F6B4A; --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--parchment);font-family:'Inter',sans-serif;color:var(--slate);}
+  .display{font-family:'Fraunces',serif;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+  .wrap{max-width:640px;margin:0 auto;padding:44px 24px 80px;}
+  h1.display{font-size:30px;font-weight:600;color:var(--ink);margin:0 0 6px;}
+  .sub{font-size:14px;color:var(--slate-soft);margin:0 0 32px;line-height:1.6;}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px 26px;margin-bottom:20px;}
+  .panel h2{font-family:'Fraunces',serif;font-size:18px;font-weight:600;color:var(--ink);margin:0 0 4px;}
+  .panel .hint{font-size:12.5px;color:var(--slate-soft);margin:0 0 18px;line-height:1.55;}
+
+  label.field-label{display:block;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--slate-soft);margin-bottom:7px;}
+  input[type="password"], input[type="text"]{
+    width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;
+    font-size:14px;font-family:'Inter',sans-serif;background:#FBF9F4;
+  }
+  input:focus{outline:2px solid var(--brass-light);outline-offset:1px;}
+
+  .token-row{display:flex;gap:8px;margin-bottom:10px;}
+  .token-row input{flex:1;}
+  .btn{border:1px solid var(--ink);background:var(--ink);color:#fff;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;}
+  .btn:hover{background:var(--ink-2);}
+  .btn:disabled{background:#C9BFA8;border-color:#C9BFA8;cursor:not-allowed;}
+  .btn-ghost{border:1px solid var(--line);background:#FBF9F4;color:var(--slate);border-radius:9px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;}
+  .btn-ghost:hover{border-color:var(--ink);}
+  .btn-danger{border:1px solid var(--danger);background:none;color:var(--danger);}
+
+  .status-pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:5px 10px;border-radius:99px;}
+  .status-pill.connected{background:#E8F0EA;color:var(--ok);}
+  .status-pill.disconnected{background:#F3E8E5;color:var(--danger);}
+
+  .tag-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
+  .tag{background:#F1ECE0;border:1px solid var(--line);color:var(--ink);padding:7px 12px;border-radius:99px;font-size:13px;display:flex;align-items:center;gap:8px;}
+  .tag button{border:none;background:none;color:var(--slate-soft);cursor:pointer;font-size:14px;line-height:1;padding:0;}
+  .tag button:hover{color:var(--danger);}
+  .tag-input-row{display:flex;gap:8px;margin-bottom:8px;}
+  .tag-input-row input{flex:1;}
+
+  .region-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;}
+  .region-opt{border:1px solid var(--line);background:#FBF9F4;padding:9px 14px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;color:var(--slate);}
+  .region-opt.active{background:var(--ink);border-color:var(--ink);color:#fff;}
+
+  .actions-row{display:flex;align-items:center;gap:12px;margin-top:18px;flex-wrap:wrap;}
+  .status-line{font-size:12.5px;color:var(--slate-soft);}
+  .status-line.error{color:var(--danger);}
+  .status-line.ok{color:var(--ok);}
+
+  .locked{opacity:.45;pointer-events:none;}
+
+  details.security-note{font-size:12.5px;color:var(--slate-soft);line-height:1.6;}
+  details.security-note summary{cursor:pointer;font-weight:600;color:var(--ink);margin-bottom:8px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="display">Signal — Admin</h1>
+  <p class="sub">Manage what your weekly scan searches for — no GitHub UI required. Changes here save straight to your repo, and the next scan (scheduled or manual) picks them up automatically.</p>
+
+  <div class="panel">
+    <h2>Connect</h2>
+    <p class="hint">Paste a GitHub personal access token with write access to <span class="mono">signal-scout2</span>. It's stored only in this browser's local storage and sent directly to GitHub's API — never to any other server, including ours.</p>
+    <div class="token-row">
+      <input type="password" id="token-input" placeholder="github_pat_..." autocomplete="off" />
+      <button class="btn" id="connect-btn" type="button">Connect</button>
+    </div>
+    <div id="conn-status"></div>
+    <details class="security-note" style="margin-top:12px;">
+      <summary>How to create a token</summary>
+      GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token. Set repository access to only <span class="mono">signal-scout2</span>, and under Permissions grant <b>Contents: Read and write</b>. Nothing else is needed.
+    </details>
+  </div>
+
+  <div class="panel" id="editor-panel">
+    <h2>Topics &amp; positioning</h2>
+    <p class="hint">These are the exact search terms used each week. Be specific to how you'd actually be booked.</p>
+    <div id="editor-locked-wrap" class="locked">
+      <div class="tag-row" id="tag-row"></div>
+      <div class="tag-input-row">
+        <input type="text" id="tag-input" placeholder="e.g. trust-based selling, sales culture" />
+        <button class="btn-ghost" id="tag-add" type="button">Add</button>
+      </div>
+
+      <label class="field-label" style="margin-top:18px;">Market</label>
+      <div class="region-row" id="region-row">
+        <button class="region-opt active" type="button" data-region="Both Australia and the USA">Australia + USA</button>
+        <button class="region-opt" type="button" data-region="Australia">Australia only</button>
+        <button class="region-opt" type="button" data-region="the USA">USA only</button>
+      </div>
+
+      <div class="actions-row">
+        <button class="btn" id="save-btn" type="button">Save changes</button>
+        <button class="btn-ghost" id="reload-btn" type="button">Reload from GitHub</button>
+        <span class="status-line" id="save-status"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Run a scan now</h2>
+    <p class="hint">Triggers the same weekly job on demand — useful right after you change topics above. Requires the "Actions: Read and write" permission on your token as well as "Contents".</p>
+    <div class="actions-row">
+      <button class="btn-ghost locked" id="run-scan-btn" type="button">Run scan now</button>
+      <span class="status-line" id="run-status"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const OWNER = 'digitalyticsagency';
+  const REPO = 'signal-scout2';
+  const CONFIG_PATH = 'config.json';
+  const WORKFLOW_FILE = 'weekly-scanv2.yml';
+  const API = 'https://api.github.com';
+
+  const tokenInput = document.getElementById('token-input');
+  const connectBtn = document.getElementById('connect-btn');
+  const connStatus = document.getElementById('conn-status');
+  const lockedWrap = document.getElementById('editor-locked-wrap');
+  const runScanBtn = document.getElementById('run-scan-btn');
+  const tagRow = document.getElementById('tag-row');
+  const tagInput = document.getElementById('tag-input');
+  const tagAdd = document.getElementById('tag-add');
+  const regionRow = document.getElementById('region-row');
+  const saveBtn = document.getElementById('save-btn');
+  const reloadBtn = document.getElementById('reload-btn');
+  const saveStatus = document.getElementById('save-status');
+  const runStatus = document.getElementById('run-status');
+
+  let token = localStorage.getItem('signal-admin-token') || '';
+  let topics = [];
+  let region = 'Both Australia and the USA';
+  let currentSha = null;
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function ghHeaders(){
+    return {
+      'Authorization': 'Bearer ' + token,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+  }
+
+  function setConnected(isConnected){
+    if(isConnected){
+      connStatus.innerHTML = '<span class="status-pill connected">● Connected to ' + escapeHtml(REPO) + '</span>';
+      lockedWrap.classList.remove('locked');
+      runScanBtn.classList.remove('locked');
+    } else {
+      connStatus.innerHTML = '<span class="status-pill disconnected">● Not connected</span>';
+      lockedWrap.classList.add('locked');
+      runScanBtn.classList.add('locked');
+    }
+  }
+
+  function renderTags(){
+    tagRow.innerHTML = '';
+    topics.forEach((t, i) => {
+      const el = document.createElement('div');
+      el.className = 'tag';
+      el.innerHTML = '<span>' + escapeHtml(t) + '</span>';
+      const btn = document.createElement('button');
+      btn.textContent = '×';
+      btn.setAttribute('aria-label', 'Remove ' + t);
+      btn.onclick = () => { topics.splice(i,1); renderTags(); };
+      el.appendChild(btn);
+      tagRow.appendChild(el);
+    });
+  }
+
+  tagAdd.onclick = () => {
+    const v = tagInput.value.trim();
+    if(v && !topics.some(t => t.toLowerCase() === v.toLowerCase())){
+      topics.push(v);
+      renderTags();
+    }
+    tagInput.value = '';
+    tagInput.focus();
+  };
+  tagInput.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); tagAdd.click(); } });
+
+  regionRow.querySelectorAll('.region-opt').forEach(btn => {
+    btn.onclick = () => {
+      regionRow.querySelectorAll('.region-opt').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      region = btn.dataset.region;
+    };
+  });
+
+  function setRegionUI(r){
+    region = r;
+    regionRow.querySelectorAll('.region-opt').forEach(b => {
+      b.classList.toggle('active', b.dataset.region === r);
+    });
+  }
+
+  async function loadConfig(){
+    saveStatus.textContent = 'Loading current config…';
+    saveStatus.className = 'status-line';
+    try{
+      const res = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/${CONFIG_PATH}`, { headers: ghHeaders() });
+      if(!res.ok) throw new Error('GitHub responded with ' + res.status);
+      const data = await res.json();
+      currentSha = data.sha;
+      const decoded = decodeURIComponent(escape(atob(data.content.replace(/\n/g,''))));
+      const config = JSON.parse(decoded);
+      topics = Array.isArray(config.topics) ? config.topics : [];
+      setRegionUI(config.region || 'Both Australia and the USA');
+      renderTags();
+      saveStatus.textContent = 'Loaded current config.';
+      saveStatus.className = 'status-line ok';
+    }catch(err){
+      console.error(err);
+      saveStatus.textContent = 'Could not load config: ' + err.message;
+      saveStatus.className = 'status-line error';
+    }
+  }
+
+  async function saveConfig(){
+    if(topics.length === 0){
+      saveStatus.textContent = 'Add at least one topic first.';
+      saveStatus.className = 'status-line error';
+      return;
+    }
+    saveBtn.disabled = true;
+    saveStatus.textContent = 'Saving to GitHub…';
+    saveStatus.className = 'status-line';
+    try{
+      const payload = { topics, region };
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(payload, null, 2) + '\n')));
+      const res = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/${CONFIG_PATH}`, {
+        method: 'PUT',
+        headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Update scan config via admin panel',
+          content,
+          sha: currentSha,
+        }),
+      });
+      if(!res.ok){
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.message || ('GitHub responded with ' + res.status));
+      }
+      const data = await res.json();
+      currentSha = data.content.sha;
+      saveStatus.textContent = 'Saved. The next scan will use these topics.';
+      saveStatus.className = 'status-line ok';
+    }catch(err){
+      console.error(err);
+      saveStatus.textContent = 'Save failed: ' + err.message;
+      saveStatus.className = 'status-line error';
+    }finally{
+      saveBtn.disabled = false;
+    }
+  }
+
+  async function runScanNow(){
+    runScanBtn.disabled = true;
+    runStatus.textContent = 'Triggering…';
+    runStatus.className = 'status-line';
+    try{
+      const res = await fetch(`${API}/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`, {
+        method: 'POST',
+        headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: 'main' }),
+      });
+      if(!res.ok){
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.message || ('GitHub responded with ' + res.status));
+      }
+      runStatus.textContent = 'Triggered — check the Actions tab in ~10s, takes about a minute to finish.';
+      runStatus.className = 'status-line ok';
+    }catch(err){
+      console.error(err);
+      runStatus.textContent = 'Failed: ' + err.message;
+      runStatus.className = 'status-line error';
+    }finally{
+      runScanBtn.disabled = false;
+    }
+  }
+
+  connectBtn.onclick = async () => {
+    const v = tokenInput.value.trim();
+    if(!v){ return; }
+    token = v;
+    localStorage.setItem('signal-admin-token', token);
+    tokenInput.value = '';
+    tokenInput.placeholder = 'Token saved in this browser';
+    // Verify by attempting to load config
+    try{
+      const res = await fetch(`${API}/repos/${OWNER}/${REPO}`, { headers: ghHeaders() });
+      if(!res.ok) throw new Error('Token rejected (' + res.status + ')');
+      setConnected(true);
+      await loadConfig();
+    }catch(err){
+      setConnected(false);
+      connStatus.innerHTML += '<div class="status-line error" style="margin-top:8px;">' + escapeHtml(err.message) + '</div>';
+    }
+  };
+
+  reloadBtn.onclick = loadConfig;
+  saveBtn.onclick = saveConfig;
+  runScanBtn.onclick = runScanNow;
+
+  // Auto-connect if a token is already stored locally
+  if(token){
+    tokenInput.placeholder = 'Token saved in this browser';
+    (async () => {
+      try{
+        const res = await fetch(`${API}/repos/${OWNER}/${REPO}`, { headers: ghHeaders() });
+        if(!res.ok) throw new Error();
+        setConnected(true);
+        await loadConfig();
+      }catch(err){
+        setConnected(false);
+      }
+    })();
+  } else {
+    setConnected(false);
+  }
+})();
+</script>
+</body>
+</html>
