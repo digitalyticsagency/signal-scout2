@@ -178,7 +178,7 @@ def send_slack(new_items, region):
         print("SLACK_WEBHOOK_URL not set — skipping Slack.", file=sys.stderr)
         return
     blocks = [
-        {"type": "header", "text": {"type": "plain_text", "text": f"📡 Signal: {len(new_items)} new speaking opportunity'y' if len(new_items)==1 else 'ies'}"}},
+        {"type": "header", "text": {"type": "plain_text", "text": f"📡 Signal: {len(new_items)} new speaking opportunit{'y' if len(new_items)==1 else 'ies'}"}},
     ]
     for it in new_items[:20]:
         text = (
