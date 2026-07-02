@@ -105,7 +105,8 @@ def run_search(topics, region):
 
     system_prompt = f"""You are a research assistant helping a professional speaker find real, currently relevant speaking opportunities using web search.
 Search for: upcoming conferences, association events, corporate speaker programs, calls-for-speakers/calls-for-proposals, and guest-podcast opportunities relevant to the topics: {topics_str}. Market: {region}. Today's date is {today_str}. Only include things that are upcoming or currently accepting applications — do not include past events.
-After you finish searching, respond with ONLY a JSON array (no markdown fences, no preamble, no commentary before or after) of up to 8 objects, each with exactly these fields:
+Search thoroughly — run multiple distinct searches covering different topic/region combinations rather than one broad search, so you surface as many genuine, distinct opportunities as you can find. Do not artificially cap the count; include every real result your searches turn up, whether that's 5 or 50.
+After you finish searching, respond with ONLY a JSON array (no markdown fences, no preamble, no commentary before or after) of objects, each with exactly these fields:
 title, organization, type (one of "Conference", "Corporate Program", "Association Event", "Podcast", "CFP/Call for Speakers", "Other"), region ("Australia" or "USA"), date, deadline, url, fit_reason (one sentence, specific to why a trust-based sales coach fits this).
 If you cannot find real results, return an empty array []. Do not invent URLs or events — only include what your searches actually surfaced."""
 
@@ -120,7 +121,7 @@ If you cannot find real results, return an empty array []. Do not invent URLs or
             },
             json={
                 "model": MODEL,
-                "max_tokens": 8192,
+                "max_tokens": 16000,
                 "system": system_prompt,
                 "messages": [
                     {
@@ -177,7 +178,7 @@ def send_slack(new_items, region):
         print("SLACK_WEBHOOK_URL not set — skipping Slack.", file=sys.stderr)
         return
     blocks = [
-        {"type": "header", "text": {"type": "plain_text", "text": f"📡 Signal: {len(new_items)} new speaking opportunit{'y' if len(new_items)==1 else 'ies'}"}},
+        {"type": "header", "text": {"type": "plain_text", "text": f"📡 Signal: {len(new_items)} new speaking opportunity'y' if len(new_items)==1 else 'ies'}"}},
     ]
     for it in new_items[:20]:
         text = (
