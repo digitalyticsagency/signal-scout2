@@ -193,6 +193,7 @@
     #signal-widget .sw-head{flex-direction:column;align-items:flex-start;}
     #signal-widget .sw-updated{text-align:left;}
     #signal-widget .card-meta{gap:10px;font-size:11px;}
+    #signal-widget #sw-search{max-width:none !important;width:100%;margin-left:0 !important;}
   }
 </style>
 </head>
@@ -207,10 +208,13 @@
     <div class="sw-updated" id="sw-updated"></div>
   </div>
 
+  <p class="mono" id="sw-count" style="font-size:12px;color:var(--slate-soft);margin:0 0 14px;"></p>
+
   <div class="filters" id="sw-filters" style="display:none;">
     <button class="filter-btn active" data-region="all" type="button">All</button>
     <button class="filter-btn" data-region="Australia" type="button">Australia</button>
     <button class="filter-btn" data-region="USA" type="button">USA</button>
+    <input type="text" id="sw-search" placeholder="Search by name, org, or type…" style="margin-left:auto;min-width:160px;flex:1;max-width:240px;border:1px solid var(--line);border-radius:99px;padding:7px 14px;font-size:12.5px;font-family:'Inter',sans-serif;background:#FBF9F4;color:var(--slate);" />
   </div>
 
   <div id="sw-results">
@@ -234,9 +238,12 @@
   const resultsEl = document.getElementById('sw-results');
   const updatedEl = document.getElementById('sw-updated');
   const filtersEl = document.getElementById('sw-filters');
+  const countEl = document.getElementById('sw-count');
+  const searchEl = document.getElementById('sw-search');
 
   let allItems = [];
   let currentFilter = 'all';
+  let searchTerm = '';
 
   function escapeHtml(s){
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -260,10 +267,21 @@
     const savedIds = getLocal('sw-saved-ids');
     const dismissedIds = getLocal('sw-dismissed-ids');
 
-    const filtered = allItems.filter(it => currentFilter === 'all' || (it.region || '').toLowerCase() === currentFilter.toLowerCase());
+    const filtered = allItems.filter(it => {
+      const matchesRegion = currentFilter === 'all' || (it.region || '').toLowerCase() === currentFilter.toLowerCase();
+      if(!matchesRegion) return false;
+      if(!searchTerm) return true;
+      const haystack = [it.title, it.organization, it.type].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(searchTerm.toLowerCase());
+    });
+
+    countEl.textContent = filtered.length + (filtered.length === 1 ? ' opportunity shown' : ' opportunities shown') + (allItems.length !== filtered.length ? ' of ' + allItems.length : '');
 
     if(filtered.length === 0){
-      resultsEl.innerHTML = `<div class="empty-state"><span class="display">Nothing here right now</span>Check back after the next weekly scan.</div>`;
+      const msg = searchTerm
+        ? `<div class="empty-state"><span class="display">No matches</span>Nothing matches "${escapeHtml(searchTerm)}" — try a different search.</div>`
+        : `<div class="empty-state"><span class="display">Nothing here right now</span>Check back after the next weekly scan.</div>`;
+      resultsEl.innerHTML = msg;
       return;
     }
 
@@ -338,6 +356,11 @@
       currentFilter = btn.dataset.region;
       render();
     };
+  });
+
+  searchEl.addEventListener('input', () => {
+    searchTerm = searchEl.value;
+    render();
   });
 
   load();
