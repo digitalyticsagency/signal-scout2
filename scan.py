@@ -14,6 +14,7 @@ that's what makes "new since last time" possible on a stateless runner.
 import json
 import os
 import sys
+import time
 import hashlib
 from datetime import datetime
 from pathlib import Path
@@ -52,14 +53,46 @@ def item_id(item):
 
 
 def extract_json(text):
-    start = text.find("[")
-    end = text.rfind("]")
-    if start == -1 or end == -1 or end < start:
-        return None
-    try:
-        return json.loads(text[start:end + 1])
-    except json.JSONDecodeError:
-        return None
+    """Find the first well-formed top-level JSON array in text.
+
+    Naive first-'['/last-']' matching breaks if the model's reply contains
+    any other bracket pair before the real array — most commonly a markdown
+    link like '[Source](url)' in a preamble sentence. This version tracks
+    bracket depth and string state so it only ever returns a candidate that
+    is actually valid JSON, skipping over false matches and continuing to
+    search until it finds a real one (or runs out of text).
+    """
+    depth = 0
+    start = None
+    in_string = False
+    escape = False
+    for i, ch in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "[":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "]":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start is not None:
+                    candidate = text[start:i + 1]
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        start = None  # false match (e.g. "[Source]") — keep scanning
+                        continue
+    return None
 
 
 def run_search(topics, region):
@@ -75,29 +108,45 @@ After you finish searching, respond with ONLY a JSON array (no markdown fences, 
 title, organization, type (one of "Conference", "Corporate Program", "Association Event", "Podcast", "CFP/Call for Speakers", "Other"), region ("Australia" or "USA"), date, deadline, url, fit_reason (one sentence, specific to why a trust-based sales coach fits this).
 If you cannot find real results, return an empty array []. Do not invent URLs or events — only include what your searches actually surfaced."""
 
-    resp = requests.post(
-        "https://api.anthropic.com/v1/messages",
-        headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-        json={
-            "model": MODEL,
-            "max_tokens": 4096,
-            "system": system_prompt,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": f"Find current speaking opportunities for a trust-based sales coach. Topics: {topics_str}. Market: {region}.",
-                }
-            ],
-            "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-        },
-        timeout=180,
-    )
-    resp.raise_for_status()
+    max_attempts = 4
+    for attempt in range(1, max_attempts + 1):
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": MODEL,
+                "max_tokens": 8192,
+                "system": system_prompt,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Find current speaking opportunities for a trust-based sales coach. Topics: {topics_str}. Market: {region}.",
+                    }
+                ],
+                "tools": [{"type": "web_search_20250305", "name": "web_search"}],
+            },
+            timeout=180,
+        )
+
+        if resp.status_code == 429 or resp.status_code >= 500:
+            if attempt == max_attempts:
+                resp.raise_for_status()
+            retry_after = resp.headers.get("retry-after")
+            wait = float(retry_after) if retry_after else (2 ** attempt) * 5
+            print(f"Got {resp.status_code} from Anthropic API (attempt {attempt}/{max_attempts}) — waiting {wait:.0f}s before retry.", file=sys.stderr)
+            time.sleep(wait)
+            continue
+
+        resp.raise_for_status()
+        break
     data = resp.json()
+
+    if data.get("stop_reason") == "max_tokens":
+        print("Warning: response was cut off at the token limit — JSON may be truncated.", file=sys.stderr)
 
     text_blocks = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
     if not text_blocks:
@@ -107,7 +156,10 @@ If you cannot find real results, return an empty array []. Do not invent URLs or
     if items is None:
         items = extract_json("\n".join(text_blocks))
     if items is None:
+        joined = "\n".join(text_blocks)
         print("Warning: could not parse a JSON array from Claude's response.", file=sys.stderr)
+        print(f"Response length: {len(joined)} chars. Last 300 chars:", file=sys.stderr)
+        print(joined[-300:], file=sys.stderr)
         return []
 
     out = []
