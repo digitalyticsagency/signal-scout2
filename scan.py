@@ -144,6 +144,9 @@ If you cannot find real results, return an empty array []. Do not invent URLs or
             time.sleep(wait)
             continue
 
+        if resp.status_code >= 400 and resp.status_code != 429:
+            print(f"Anthropic API error {resp.status_code}: {resp.text}", file=sys.stderr)
+
         resp.raise_for_status()
         break
     data = resp.json()
