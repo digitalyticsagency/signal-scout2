@@ -4,7 +4,7 @@ Signal — Speaking Opportunity Scout (autonomous weekly runner)
 
 Runs on a schedule (see .github/workflows/weekly-scan.yml), asks Claude to
 web-search for speaking opportunities, diffs the results against what was
-found last time, and pushes anything new to Slack.
+found last time, and writes the full current list to a Google Sheet.
 
 State (which opportunities we've already seen) is kept in seen_ids.json,
 which this script rewrites and the workflow commits back to the repo —
@@ -16,7 +16,7 @@ import os
 import sys
 import time
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -27,7 +27,8 @@ STATE_PATH = HERE / "seen_ids.json"
 RESULTS_PATH = HERE / "docs" / "results.json"
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL")
+GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID")
 
 MODEL = "claude-sonnet-5"
 
@@ -173,40 +174,57 @@ If you cannot find real results, return an empty array []. Do not invent URLs or
     return out
 
 
-def send_slack(new_items, region):
-    if not SLACK_WEBHOOK_URL:
-        print("SLACK_WEBHOOK_URL not set — skipping Slack.", file=sys.stderr)
-        return
-    blocks = [
-        {"type": "header", "text": {"type": "plain_text", "text": f"📡 Signal: {len(new_items)} new speaking opportunit{'y' if len(new_items)==1 else 'ies'}"}},
-    ]
-    for it in new_items[:20]:
-        text = (
-            f"*<{it.get('url','')}|{it.get('title','Untitled')}>*\n"
-            f"{it.get('organization','Unknown org')} · {it.get('type','')} · {region}\n"
-            f"Event: {it.get('date','TBD')}  |  Apply by: {it.get('deadline','Not specified')}\n"
-            f"_{it.get('fit_reason','')}_"
-        )
-        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": text}})
-        blocks.append({"type": "divider"})
-    resp = requests.post(SLACK_WEBHOOK_URL, json={"blocks": blocks}, timeout=30)
-    if resp.status_code != 200:
-        print(f"Slack post failed: {resp.status_code} {resp.text}", file=sys.stderr)
-    else:
-        print("Slack message sent")
-
-
-def save_results(items, region, topics, new_ids):
+def save_results(enriched_items, region, topics):
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "generated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "region": region,
         "topics": topics,
-        "opportunities": [
-            {**it, "isNew": it["id"] in new_ids} for it in items
-        ],
+        "opportunities": enriched_items,
     }
     RESULTS_PATH.write_text(json.dumps(payload, indent=2))
+
+
+def update_google_sheet(enriched_items):
+    if not GOOGLE_SERVICE_ACCOUNT_JSON or not GOOGLE_SHEET_ID:
+        print("Google Sheets credentials not set — skipping sheet update.", file=sys.stderr)
+        return
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+    except ImportError:
+        print("gspread/google-auth not installed — skipping sheet update.", file=sys.stderr)
+        return
+
+    try:
+        creds_info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(creds_info, scopes=scopes)
+        client = gspread.authorize(creds)
+        sheet = client.open_by_key(GOOGLE_SHEET_ID).sheet1
+
+        header = ["Date Added", "New", "Title", "Organization", "Type", "Region", "Event Date", "Apply By", "URL", "Why It Fits"]
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        rows = [header]
+        for it in enriched_items:
+            rows.append([
+                today_str,
+                "Yes" if it.get("isNew") else "",
+                it.get("title", ""),
+                it.get("organization", ""),
+                it.get("type", ""),
+                it.get("region", ""),
+                it.get("date", ""),
+                it.get("deadline", ""),
+                it.get("url", ""),
+                it.get("fit_reason", ""),
+            ])
+
+        sheet.clear()
+        sheet.update(rows, "A1")
+        print(f"Google Sheet updated with {len(enriched_items)} rows")
+    except Exception as err:
+        print(f"Google Sheet update failed: {err}", file=sys.stderr)
 
 
 def main():
@@ -221,22 +239,20 @@ def main():
     items = run_search(topics, region)
     print(f"Claude returned {len(items)} item(s)")
 
-    new_item_ids = {it["id"] for it in items if it["id"] not in seen_ids}
-    new_items = [it for it in items if it["id"] in new_item_ids]
+    new_item_ids = {it["id"] for it in items if it["id"] not in seen_ids} if not is_first_run else set()
     seen_ids.update(it["id"] for it in items)
     save_seen_ids(seen_ids)
-    save_results(items, region, topics, new_item_ids if not is_first_run else set())
+
+    enriched_items = [{**it, "isNew": it["id"] in new_item_ids} for it in items]
+    save_results(enriched_items, region, topics)
+    update_google_sheet(enriched_items)
 
     if is_first_run:
-        print(f"First run — saved {len(items)} as baseline, no notifications sent.")
-        return
-
-    if not new_items:
+        print(f"First run — saved {len(items)} as baseline.")
+    elif new_item_ids:
+        print(f"{len(new_item_ids)} new opportunit{'y' if len(new_item_ids)==1 else 'ies'} this run.")
+    else:
         print("No new opportunities since last scan.")
-        return
-
-    print(f"{len(new_items)} new opportunit(y/ies) — notifying.")
-    send_slack(new_items, region)
 
 
 if __name__ == "__main__":
