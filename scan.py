@@ -13,10 +13,11 @@ that's what makes "new since last time" possible on a stateless runner.
 
 import json
 import os
+import re
 import sys
 import time
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import requests
@@ -49,8 +50,22 @@ def save_seen_ids(ids):
     STATE_PATH.write_text(json.dumps(sorted(ids), indent=2))
 
 
+def normalize_url(url):
+    if not url:
+        return ""
+    u = url.strip().lower()
+    u = re.sub(r"^https?://(www\.)?", "", u)
+    u = u.split("?")[0].split("#")[0]
+    return u.rstrip("/")
+
+
 def item_id(item):
-    base = f"{item.get('url','')}|{item.get('title','')}|{item.get('organization','')}"
+    url_key = normalize_url(item.get("url", ""))
+    if url_key:
+        base = url_key
+    else:
+        # No URL to key off — fall back to normalized title+org (rare case).
+        base = f"{item.get('title','').strip().lower()}|{item.get('organization','').strip().lower()}"
     return "op_" + hashlib.sha256(base.encode()).hexdigest()[:16]
 
 
@@ -177,18 +192,32 @@ If you cannot find real results, return an empty array []. Do not invent URLs or
     return out
 
 
-def save_results(enriched_items, region, topics):
+def compute_next_run(schedule):
+    day_map = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
+    target_day = day_map.get((schedule or {}).get("day", "Monday"), 0)
+    hour = int((schedule or {}).get("hour_utc", 7))
+    now = datetime.now(timezone.utc)
+    days_ahead = (target_day - now.weekday()) % 7
+    candidate = (now + timedelta(days=days_ahead)).replace(hour=hour, minute=0, second=0, microsecond=0)
+    if candidate <= now:
+        candidate += timedelta(days=7)
+    return candidate.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def save_results(enriched_items, region, topics, schedule):
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "region": region,
         "topics": topics,
+        "schedule": schedule,
+        "next_scheduled_scan": compute_next_run(schedule),
         "opportunities": enriched_items,
     }
     RESULTS_PATH.write_text(json.dumps(payload, indent=2))
 
 
-def update_google_sheet(enriched_items):
+def update_google_sheet(enriched_items, new_item_ids):
     if not GOOGLE_SERVICE_ACCOUNT_JSON or not GOOGLE_SHEET_ID:
         print("Google Sheets credentials not set — skipping sheet update.", file=sys.stderr)
         return
@@ -199,6 +228,10 @@ def update_google_sheet(enriched_items):
         print("gspread/google-auth not installed — skipping sheet update.", file=sys.stderr)
         return
 
+    header = ["Date Added", "Status", "Title", "Organization", "Type", "Region", "Event Date", "Apply By", "URL", "Why It Fits", "ID"]
+    STATUS_COL = header.index("Status")
+    ID_COL = header.index("ID")
+
     try:
         creds_info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
         scopes = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -206,26 +239,47 @@ def update_google_sheet(enriched_items):
         client = gspread.authorize(creds)
         sheet = client.open_by_key(GOOGLE_SHEET_ID).sheet1
 
-        header = ["Date Added", "New", "Title", "Organization", "Type", "Region", "Event Date", "Apply By", "URL", "Why It Fits"]
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        rows = [header]
-        for it in enriched_items:
-            rows.append([
-                today_str,
-                "Yes" if it.get("isNew") else "",
-                it.get("title", ""),
-                it.get("organization", ""),
-                it.get("type", ""),
-                it.get("region", ""),
-                it.get("date", ""),
-                it.get("deadline", ""),
-                it.get("url", ""),
-                it.get("fit_reason", ""),
-            ])
+        existing = sheet.get_all_values()
+        if not existing or existing[0] != header:
+            # First run, or an older sheet format — (re)write just the header.
+            sheet.clear()
+            sheet.update([header], "A1")
+            existing = [header]
 
-        sheet.clear()
-        sheet.update(rows, "A1")
-        print(f"Google Sheet updated with {len(enriched_items)} rows")
+        existing_ids = set()
+        rows_to_flip = []  # 1-indexed sheet row numbers whose Status should become "Seen"
+        for i, row in enumerate(existing[1:], start=2):
+            if len(row) > ID_COL and row[ID_COL]:
+                existing_ids.add(row[ID_COL])
+            if len(row) > STATUS_COL and row[STATUS_COL] == "New":
+                rows_to_flip.append(i)
+
+        if rows_to_flip:
+            cells = [gspread.Cell(row=r, col=STATUS_COL + 1, value="Seen") for r in rows_to_flip]
+            sheet.update_cells(cells)
+
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        new_rows = []
+        for it in enriched_items:
+            if it["id"] in new_item_ids and it["id"] not in existing_ids:
+                new_rows.append([
+                    today_str,
+                    "New",
+                    it.get("title", ""),
+                    it.get("organization", ""),
+                    it.get("type", ""),
+                    it.get("region", ""),
+                    it.get("date", ""),
+                    it.get("deadline", ""),
+                    it.get("url", ""),
+                    it.get("fit_reason", ""),
+                    it["id"],
+                ])
+
+        if new_rows:
+            sheet.append_rows(new_rows, value_input_option="RAW")
+
+        print(f"Google Sheet: {len(rows_to_flip)} row(s) marked Seen, {len(new_rows)} new row(s) appended")
     except Exception as err:
         print(f"Google Sheet update failed: {err}", file=sys.stderr)
 
@@ -234,6 +288,7 @@ def main():
     config = load_config()
     topics = config["topics"]
     region = config.get("region", "Both Australia and the USA")
+    schedule = config.get("schedule", {"day": "Monday", "hour_utc": 7})
 
     seen_ids = load_seen_ids()
     is_first_run = len(seen_ids) == 0
@@ -247,8 +302,8 @@ def main():
     save_seen_ids(seen_ids)
 
     enriched_items = [{**it, "isNew": it["id"] in new_item_ids} for it in items]
-    save_results(enriched_items, region, topics)
-    update_google_sheet(enriched_items)
+    save_results(enriched_items, region, topics, schedule)
+    update_google_sheet(enriched_items, new_item_ids)
 
     if is_first_run:
         print(f"First run — saved {len(items)} as baseline.")
