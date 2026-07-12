@@ -110,6 +110,36 @@
     </div>
   </div>
 
+  <div class="panel" id="schedule-panel">
+    <h2>Schedule</h2>
+    <p class="hint">When the automatic weekly scan runs. This updates the actual GitHub Actions trigger, not just a display setting.</p>
+    <div id="schedule-locked-wrap" class="locked">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:140px;">
+          <label class="field-label">Day of week</label>
+          <select id="schedule-day" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:14px;font-family:'Inter',sans-serif;background:#FBF9F4;color:var(--slate);">
+            <option value="Monday">Monday</option>
+            <option value="Tuesday">Tuesday</option>
+            <option value="Wednesday">Wednesday</option>
+            <option value="Thursday">Thursday</option>
+            <option value="Friday">Friday</option>
+            <option value="Saturday">Saturday</option>
+            <option value="Sunday">Sunday</option>
+          </select>
+        </div>
+        <div style="flex:1;min-width:140px;">
+          <label class="field-label">Hour (UTC)</label>
+          <select id="schedule-hour" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:14px;font-family:'Inter',sans-serif;background:#FBF9F4;color:var(--slate);"></select>
+        </div>
+      </div>
+      <p class="hint" id="schedule-local-hint" style="margin-top:10px;margin-bottom:0;"></p>
+      <div class="actions-row">
+        <button class="btn" id="schedule-save-btn" type="button">Save schedule</button>
+        <span class="status-line" id="schedule-status"></span>
+      </div>
+    </div>
+  </div>
+
   <div class="panel">
     <h2>Run a scan now</h2>
     <p class="hint">Triggers the same weekly job on demand — useful right after you change topics above. Requires the "Actions: Read and write" permission on your token as well as "Contents".</p>
@@ -141,11 +171,41 @@
   const reloadBtn = document.getElementById('reload-btn');
   const saveStatus = document.getElementById('save-status');
   const runStatus = document.getElementById('run-status');
+  const scheduleLockedWrap = document.getElementById('schedule-locked-wrap');
+  const scheduleDaySelect = document.getElementById('schedule-day');
+  const scheduleHourSelect = document.getElementById('schedule-hour');
+  const scheduleLocalHint = document.getElementById('schedule-local-hint');
+  const scheduleSaveBtn = document.getElementById('schedule-save-btn');
+  const scheduleStatus = document.getElementById('schedule-status');
+
+  for(let h = 0; h < 24; h++){
+    const opt = document.createElement('option');
+    opt.value = String(h);
+    opt.textContent = String(h).padStart(2,'0') + ':00 UTC';
+    scheduleHourSelect.appendChild(opt);
+  }
+  function updateLocalHint(){
+    const day = scheduleDaySelect.value;
+    const hour = parseInt(scheduleHourSelect.value, 10);
+    const dayIdx = {Sunday:0,Monday:1,Tuesday:2,Wednesday:3,Thursday:4,Friday:5,Saturday:6}[day];
+    const now = new Date();
+    const utcNow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, 0, 0));
+    const diff = (dayIdx - utcNow.getUTCDay() + 7) % 7;
+    utcNow.setUTCDate(utcNow.getUTCDate() + diff);
+    scheduleLocalHint.textContent = 'That\'s ' + utcNow.toLocaleString(undefined, { weekday: 'long', hour: 'numeric', minute: '2-digit' }) + ' in your local time.';
+  }
+  scheduleDaySelect.addEventListener('change', updateLocalHint);
+  scheduleHourSelect.addEventListener('change', updateLocalHint);
+  scheduleDaySelect.value = 'Monday';
+  scheduleHourSelect.value = '7';
+  updateLocalHint();
 
   let token = localStorage.getItem('signal-admin-token') || '';
   let topics = [];
   let region = 'Both Australia and the USA';
+  let schedule = { day: 'Monday', hour_utc: 7 };
   let currentSha = null;
+  let workflowSha = null;
 
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -163,10 +223,12 @@
     if(isConnected){
       connStatus.innerHTML = '<span class="status-pill connected">● Connected to ' + escapeHtml(REPO) + '</span>';
       lockedWrap.classList.remove('locked');
+      scheduleLockedWrap.classList.remove('locked');
       runScanBtn.classList.remove('locked');
     } else {
       connStatus.innerHTML = '<span class="status-pill disconnected">● Not connected</span>';
       lockedWrap.classList.add('locked');
+      scheduleLockedWrap.classList.add('locked');
       runScanBtn.classList.add('locked');
     }
   }
@@ -224,6 +286,10 @@
       const config = JSON.parse(decoded);
       topics = Array.isArray(config.topics) ? config.topics : [];
       setRegionUI(config.region || 'Both Australia and the USA');
+      schedule = config.schedule && config.schedule.day ? config.schedule : { day: 'Monday', hour_utc: 7 };
+      scheduleDaySelect.value = schedule.day;
+      scheduleHourSelect.value = String(schedule.hour_utc);
+      updateLocalHint();
       renderTags();
       saveStatus.textContent = 'Loaded current config.';
       saveStatus.className = 'status-line ok';
@@ -244,7 +310,7 @@
     saveStatus.textContent = 'Saving to GitHub…';
     saveStatus.className = 'status-line';
     try{
-      const payload = { topics, region };
+      const payload = { topics, region, schedule };
       const content = btoa(unescape(encodeURIComponent(JSON.stringify(payload, null, 2) + '\n')));
       const res = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/${CONFIG_PATH}`, {
         method: 'PUT',
@@ -269,6 +335,64 @@
       saveStatus.className = 'status-line error';
     }finally{
       saveBtn.disabled = false;
+    }
+  }
+
+  async function saveSchedule(){
+    scheduleSaveBtn.disabled = true;
+    scheduleStatus.textContent = 'Saving…';
+    scheduleStatus.className = 'status-line';
+    try{
+      schedule = { day: scheduleDaySelect.value, hour_utc: parseInt(scheduleHourSelect.value, 10) };
+
+      // 1. Update config.json (schedule field, keeping current topics/region)
+      const configContent = btoa(unescape(encodeURIComponent(JSON.stringify({ topics, region, schedule }, null, 2) + '\n')));
+      const configRes = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/${CONFIG_PATH}`, {
+        method: 'PUT',
+        headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Update schedule via admin panel', content: configContent, sha: currentSha }),
+      });
+      if(!configRes.ok){
+        const errBody = await configRes.json().catch(() => ({}));
+        throw new Error(errBody.message || ('GitHub responded with ' + configRes.status + ' updating config.json'));
+      }
+      const configData = await configRes.json();
+      currentSha = configData.content.sha;
+
+      // 2. Update the actual cron trigger in the workflow file
+      const workflowPath = `.github/workflows/${WORKFLOW_FILE}`;
+      const wfGetRes = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/${workflowPath}`, { headers: ghHeaders() });
+      if(!wfGetRes.ok) throw new Error('Could not read workflow file (' + wfGetRes.status + ')');
+      const wfData = await wfGetRes.json();
+      workflowSha = wfData.sha;
+      const wfDecoded = decodeURIComponent(escape(atob(wfData.content.replace(/\n/g,''))));
+
+      const cronDayMap = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+      const cronDay = cronDayMap[schedule.day];
+      const newCronLine = `    - cron: "0 ${schedule.hour_utc} * * ${cronDay}"`;
+      if(!/- cron: "[^"]*"/.test(wfDecoded)){
+        throw new Error('Could not find a cron line in the workflow file to update.');
+      }
+      const wfUpdated = wfDecoded.replace(/    - cron: "[^"]*"/, newCronLine);
+      const wfContent = btoa(unescape(encodeURIComponent(wfUpdated)));
+      const wfPutRes = await fetch(`${API}/repos/${OWNER}/${REPO}/contents/${workflowPath}`, {
+        method: 'PUT',
+        headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Update scan schedule to ' + schedule.day + ' ' + schedule.hour_utc + ':00 UTC', content: wfContent, sha: workflowSha }),
+      });
+      if(!wfPutRes.ok){
+        const errBody = await wfPutRes.json().catch(() => ({}));
+        throw new Error(errBody.message || ('GitHub responded with ' + wfPutRes.status + ' updating the workflow file'));
+      }
+
+      scheduleStatus.textContent = 'Saved — scans now run every ' + schedule.day + ' at ' + String(schedule.hour_utc).padStart(2,'0') + ':00 UTC.';
+      scheduleStatus.className = 'status-line ok';
+    }catch(err){
+      console.error(err);
+      scheduleStatus.textContent = 'Save failed: ' + err.message;
+      scheduleStatus.className = 'status-line error';
+    }finally{
+      scheduleSaveBtn.disabled = false;
     }
   }
 
@@ -318,6 +442,7 @@
 
   reloadBtn.onclick = loadConfig;
   saveBtn.onclick = saveConfig;
+  scheduleSaveBtn.onclick = saveSchedule;
   runScanBtn.onclick = runScanNow;
 
   // Auto-connect if a token is already stored locally
