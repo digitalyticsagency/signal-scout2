@@ -7,5 +7,9 @@
     "business",
     "conference"
   ],
-  "region": "Both Australia and the USA"
+  "region": "Both Australia and the USA",
+  "schedule": {
+    "day": "Monday",
+    "hour_utc": 7
+  }
 }
